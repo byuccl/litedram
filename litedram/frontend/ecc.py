@@ -21,6 +21,12 @@ Limitations:
 
 from migen import *
 
+##################################
+# Added import
+##################################
+from migen.genlib.fsm import *
+##################################
+
 from litex.soc.interconnect.csr import *
 from litex.soc.interconnect.stream import *
 from litex.soc.cores.ecc import *
@@ -183,3 +189,92 @@ class LiteDRAMNativePortECC(Module, AutoCSR):
                     )
                 )
             ]
+
+        #################################################################
+        # Added code
+        #################################################################
+
+        # Registers to capture last address and data written to DRAM
+        self.w_nonecc_address = CSRStatus(port_to.address_width)
+        self.w_nonecc_data1 = CSRStatus(32)
+        self.w_nonecc_data2 = CSRStatus(32)
+        self.w_nonecc_data3 = CSRStatus(8)
+        self.w_ecc_address = CSRStatus(port_from.address_width)
+        self.w_ecc_data1 = CSRStatus(32)
+        self.w_ecc_data2 = CSRStatus(32)
+
+        # Registers to capture last address and data read from the DRAM
+        self.r_nonecc_address = CSRStatus(port_from.address_width)
+        self.r_nonecc_data1 = CSRStatus(32)
+        self.r_nonecc_data2 = CSRStatus(32)
+        self.r_nonecc_data3 = CSRStatus(8)
+        self.r_ecc_address = CSRStatus(port_to.address_width)
+        self.r_ecc_data1 = CSRStatus(32)
+        self.r_ecc_data2 = CSRStatus(32)
+
+        # Know if a read or write transaction occured
+        self.r_transaction_occured = CSRStatus()
+        self.w_transaction_occured = CSRStatus()
+        
+
+        self.sync += [
+
+            self.r_transaction_occured.status.eq(self.r_transaction_occured.status),
+            self.w_transaction_occured.status.eq(self.w_transaction_occured.status),
+
+            # NON ECC port signals for writing
+            self.w_nonecc_address.status.eq(self.w_nonecc_address.status),
+            self.w_nonecc_data1.status.eq(self.w_nonecc_data1.status),
+            self.w_nonecc_data2.status.eq(self.w_nonecc_data2.status),
+            self.w_nonecc_data3.status.eq(self.w_nonecc_data3.status),
+            If(port_to.cmd.valid & port_to.cmd.ready & port_to.cmd.we & ~port_to.flush,
+                self.w_nonecc_address.status.eq(port_to.cmd.addr),
+            ),
+            If(port_to.wdata.valid & port_to.wdata.ready,
+               self.w_nonecc_data1.status.eq(port_to.wdata.data[:32]),
+               self.w_nonecc_data2.status.eq(port_to.wdata.data[32:64]),
+               self.w_nonecc_data3.status.eq(port_to.wdata.data[64:72]),
+               self.w_transaction_occured.status.eq(1),
+            ),
+
+            # NON ECC port signals for reading
+            self.r_nonecc_address.status.eq(self.r_nonecc_address.status),
+            self.r_nonecc_data1.status.eq(self.r_nonecc_data1.status),
+            self.r_nonecc_data2.status.eq(self.r_nonecc_data2.status),
+            self.r_nonecc_data3.status.eq(self.r_nonecc_data3.status),
+            If(port_to.cmd.valid & port_to.cmd.ready & ~port_to.cmd.we & ~port_to.flush,
+                self.r_nonecc_address.status.eq(port_to.cmd.addr),
+            ),
+            If(port_to.rdata.valid & port_to.rdata.ready & ~port_to.cmd.we & ~port_to.flush,
+               self.r_nonecc_data1.status.eq(port_to.rdata.data[:32]),
+               self.r_nonecc_data2.status.eq(port_to.rdata.data[32:64]),
+               self.r_nonecc_data3.status.eq(port_to.rdata.data[64:72]),
+               self.r_transaction_occured.status.eq(1),
+            ),
+
+            # ECC port signals for writing
+            self.w_ecc_address.status.eq(self.w_ecc_address.status),
+            self.w_ecc_data1.status.eq(self.w_ecc_data1.status),
+            self.w_ecc_data2.status.eq(self.w_ecc_data2.status),
+            If(port_from.cmd.valid & port_from.cmd.ready & port_from.cmd.we & ~port_from.flush,
+                self.w_ecc_address.status.eq(port_from.cmd.addr),
+            ),
+            If(port_from.wdata.valid & port_from.wdata.ready & port_from.cmd.we & ~port_from.flush,
+               self.w_ecc_data1.status.eq(port_from.wdata.data[:32]),
+               self.w_ecc_data2.status.eq(port_from.wdata.data[32:64]),
+            ),
+
+            # ECC port signals for reading
+            self.r_ecc_address.status.eq(self.r_ecc_address.status),
+            self.r_ecc_data1.status.eq(self.r_ecc_data1.status),
+            self.r_ecc_data2.status.eq(self.r_ecc_data2.status),
+            If(port_from.cmd.valid & port_from.cmd.ready & ~port_from.cmd.we & ~port_from.flush,
+                self.r_ecc_address.status.eq(port_from.cmd.addr),
+            ),
+            If(port_from.rdata.valid & port_from.rdata.ready & ~port_from.cmd.we & ~port_from.flush,
+               self.r_ecc_data1.status.eq(port_from.rdata.data[:32]),
+               self.r_ecc_data2.status.eq(port_from.rdata.data[32:64]),
+            ),
+
+        ]
+        #################################################################

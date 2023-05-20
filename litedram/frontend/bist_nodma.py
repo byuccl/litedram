@@ -106,6 +106,20 @@ class DRAMBistFSM(Module, AutoCSR):
         # A register to contain the write mode for the bist, 0 for write once read always, 1 for write/read always. Read above for description.
         self.wr_mode = CSRStorage(TWO_BITS_WIDE, description="Write mode: 0 for write once read always, 1 for write/read always.")
 
+        # A register to set the mode to writer only
+        self.write_only_mode = CSRStorage(ONE_BIT_WIDE, description="Write only mode: Control the part of the state machine that writes only.")
+
+        # A register to set the mode to reader only
+        self.reader_only_mode = CSRStorage(ONE_BIT_WIDE, description="Read only mode: Control the part of the state machine that reads only.")
+
+        # Registers to acknowledge the writer is finished and acknowledged
+        self.writer_finished_state = CSRStatus(ONE_BIT_WIDE, description="When high, writer is complete. Start must be set low, and this signal acknowledged.")
+        self.writer_finished_acknowledge = CSRStorage(ONE_BIT_WIDE, description="When high, acknowledges that the writer is finished and can move on.")
+
+        # Registers to acknowledge the reader is finished and acknowledged
+        self.reader_finished_state = CSRStatus(ONE_BIT_WIDE, description="When high, reader is complete. Start must be set low, and this signal acknowledged.")
+        self.reader_finished_acknowledge = CSRStorage(ONE_BIT_WIDE, description="When high, acknowledges that the reader is finished and can move on.")
+
         # A register to hold the data pattern to write or check reads from the port
         self.input_data_pattern = CSRStorage(WIDTH_32_BITS, description="Data pattern written to DRAM (Replicated/Concatenated to fill DRAM data width)")
 
@@ -167,10 +181,6 @@ class DRAMBistFSM(Module, AutoCSR):
         )
         ##########################################################################
 
-        # A register to hold the max number of ticks before pausing the 
-        # machine and printing out Bist information
-        self.max_num_ticks = CSRStorage(WIDTH_32_BITS, description="Max number of ticks before pausing state machine")
-
         # A register to hold the total number of ticks while writing
         self.write_ticks = CSRStatus(WIDTH_32_BITS, description="Total number of ticks during writing")
 
@@ -205,6 +215,7 @@ class DRAMBistFSM(Module, AutoCSR):
 
         # Registers to get the beginning and ending addresses
         self.beginning_address = CSRStatus(dram_port.address_width, description="The address in which the BIST starts at")
+        self.current_address = CSRStatus(dram_port.address_width, description="Current address of reading or writing.")
         self.ending_address = CSRStatus(dram_port.address_width, description="The address in which the BIST ends at.")
 
 
@@ -241,11 +252,15 @@ class DRAMBistFSM(Module, AutoCSR):
         # Acknowledge we have gone to the DISPLAY_DATA_PAUSE state so we can clear the counts
         display_data_pause_flag = Signal(ONE_BIT_WIDE)
 
+        # Allow error acknowledge signal to stay high for one clock signal.
+        error_ack_sig = Signal(ONE_BIT_WIDE)
+        error_ack_high_prev_sig = Signal(ONE_BIT_WIDE)
+
         
 
 
         # A debug signal to find out which states we are in
-        state_num_sig = Signal(WIDTH_32_BITS)
+        self.state_num_sig = CSRStatus(WIDTH_32_BITS)
 
 
 
@@ -274,10 +289,11 @@ class DRAMBistFSM(Module, AutoCSR):
         dram_port_fsm = FSM(reset_state="IDLE")
         self.submodules.dram_port_fsm = dram_port_fsm
 
-        # Wait here until the User enables the Bist
+        # Wait here until the User enables the Bist. Initialize everything beforehand
+        # regardless of what sort of writing/reading mode is chosen.
         dram_port_fsm.act(
             "IDLE",
-            state_num_sig.eq(0),
+            self.state_num_sig.status.eq(0),
             self.bist_idle.status.eq(1),
             If(self.start.storage,
                 NextValue(self.write_ticks.status, 0),
@@ -292,16 +308,251 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextValue(address_sig, self.base_address.storage),
                 NextValue(beg_address_sig, self.base_address.storage),
                 NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
-                NextState("WRITE_REQUEST"),
+                If(self.write_only_mode.storage,
+                    NextState("WRITER_ONLY_REQUEST"),
+                ).Elif(self.reader_only_mode.storage,
+                    NextState("READER_ONLY_REQUEST"),
+                ).Else(
+                    NextState("WRITE_REQUEST"),
+                )
             )
         )
+
+        dram_port_fsm.act(
+            "WRITER_ONLY_REQUEST",
+            self.state_num_sig.status.eq(0x11),
+            dram_port.cmd.we.eq(1),
+            dram_port.cmd.valid.eq(1),
+            NextValue(self.write_ticks.status, self.write_ticks.status + 1),
+            If(dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("WRITER_ONLY_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                    NextState("WRITER_ONLY_REC_REQ"),
+                )
+            )
+        )
+
+        dram_port_fsm.act(
+            "WRITER_ONLY_REC_REQ",
+            self.state_num_sig.status.eq(0x12),
+            dram_port.cmd.we.eq(1),
+            dram_port.wdata.valid.eq(1),
+            dram_port.cmd.valid.eq(1),
+            NextValue(self.write_ticks.status, self.write_ticks.status + 1),
+            If(dram_port.wdata.ready,
+                NextValue(self.total_writes.status, self.total_writes.status + 1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+            ),
+            If(dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("WRITER_ONLY_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                )
+            )
+        )
+
+        dram_port_fsm.act(
+            "WRITER_ONLY_RECIEVE",
+            self.state_num_sig.status.eq(0x13),
+            dram_port.cmd.we.eq(1),
+            dram_port.wdata.valid.eq(1),
+            NextValue(self.write_ticks.status, self.write_ticks.status + 1),
+            If(dram_port.wdata.ready,
+                NextValue(self.total_writes.status, self.total_writes.status + 1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+
+                # We are done with writing a number of bursts 
+                # at this "if" statement. 
+                If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
+                    NextState("WRITER_ONLY_FINISH"),
+                ),
+            )
+        )
+
+        dram_port_fsm.act(
+            "WRITER_ONLY_FINISH",
+            self.state_num_sig.status.eq(0x14),
+            self.writer_finished_state.status.eq(1),
+            If(self.writer_finished_acknowledge.storage,
+                NextState("IDLE"),
+            )
+        )
+
+        dram_port_fsm.act(
+            "READER_ONLY_REQUEST",
+            self.state_num_sig.status.eq(0x20),
+            dram_port.cmd.valid.eq(1),
+            NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+            If(dram_port.cmd.ready,
+               If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("READER_ONLY_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                    NextState("READER_ONLY_REQ_REC"),
+                )
+            )
+        )
+
+        dram_port_fsm.act(
+            "READER_ONLY_REQ_REC",
+            self.state_num_sig.status.eq(0x21),
+            dram_port.cmd.valid.eq(1),
+            NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+
+            # If rdata.valid is high, check the data. If it matches what is 
+            # expected, great: increment the total number of reads and the burst
+            # counter signal and move on. Otherwise, move to a pause state.
+            # If cmd.ready is high, keep the address signal the same and move on
+            # to READ_RECIEVE state.
+            If(dram_port.rdata.valid & ~dram_port.cmd.ready,
+                If(dram_port.rdata.data == data_sig,
+                    dram_port.rdata.ready.eq(1),
+                    NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                    NextValue(self.total_reads.status, self.total_reads.status + 1),
+                ).Else(
+                    NextValue(error_flag_sig, 1),
+                    NextValue(self.error_counter.status, self.error_counter.status + 1),
+                    NextState("READER_ONLY_ERR_REQ_REC"),
+                )
+            ).Elif(~dram_port.rdata.valid & dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("READER_ONLY_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                )
+
+            # In the case that both rdata.valid and cmd.ready are high, do the following:
+            # If rdata.data match and we have reached the end of addressing, great: simply 
+            # increment burst counter signal, increment total-reads, and move on to READ_RECIEVE.
+            # If we haven't reached the last address, do the same but instead of moving on to a state, 
+            # increment the address and stay in this one.
+            # If the data doesn't match and we have reached the last address, keep the address
+            # the same but move on to the READ_RECIEVE_ERR_PAUSE state, where we no longer
+            # need to worry about the cmd signal.
+            # If the data doesn't match and we haven't read the last address, move on to 
+            # the READ_REQ_REC_ERR_PAUSE state, where we still use the cmd signal.
+            ).Elif(dram_port.rdata.valid & dram_port.cmd.ready,
+                If(((data_sig == dram_port.rdata.data) & (address_sig == end_address_sig)),
+                    dram_port.rdata.ready.eq(1),
+                    NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                    NextValue(self.total_reads.status, self.total_reads.status + 1),
+                    NextValue(address_sig, address_sig),
+                    NextState("READER_ONLY_RECIEVE"),
+                ).Elif(((dram_port.rdata.data == data_sig) & (address_sig != end_address_sig)),
+                    dram_port.rdata.ready.eq(1),
+                    NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                    NextValue(self.total_reads.status, self.total_reads.status + 1),
+                    NextValue(address_sig, address_sig + 1),
+                ).Elif(((dram_port.rdata.data != data_sig) & (address_sig == end_address_sig)),
+                    NextValue(address_sig, address_sig),
+                    NextValue(self.error_counter.status, self.error_counter.status + 1),
+                    NextValue(error_flag_sig, 1),
+                    NextState("READER_ONLY_ERR_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                    NextValue(self.error_counter.status, self.error_counter.status + 1),
+                    NextValue(error_flag_sig, 1),
+                    NextState("READER_ONLY_ERR_REQ_REC"),
+                )
+            )
+        )
+
+        dram_port_fsm.act(
+            "READER_ONLY_ERR_REQ_REC",
+            self.state_num_sig.status.eq(0x22),
+            dram_port.cmd.valid.eq(1),
+            self.error_found_flag.status.eq(1),
+            If(dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                    If(error_ack_sig,
+                        NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                        NextValue(self.total_reads.status, self.total_reads.status + 1),
+                        NextValue(address_sig, address_sig),
+                        NextState("READER_ONLY_RECIEVE"),
+                    ).Else(
+                        NextValue(address_sig, address_sig),
+                        NextValue(error_flag_sig, 1),
+                        NextState("READER_ONLY_ERR_RECIEVE"),
+                    )
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                )   
+            ).Elif(error_ack_sig,
+                dram_port.rdata.ready.eq(1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                NextValue(self.total_reads.status, self.total_reads.status + 1),
+                NextState("READER_ONLY_REQ_REC"),
+            )
+        )
+
+        dram_port_fsm.act(
+            "READER_ONLY_RECIEVE",
+            self.state_num_sig.status.eq(0x23),
+            NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+            If(dram_port.rdata.valid,
+                If(dram_port.rdata.data == data_sig,
+                    dram_port.rdata.ready.eq(1),
+                    NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                    NextValue(self.total_reads.status, self.total_reads.status + 1),
+
+                    # End of done state in this if statement. Another exists in the
+                    # pause state. Basically, decide based on the modes what to set 
+                    # the address to, and set it accordingly.
+                    If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
+                        NextState("READER_ONLY_FINISH"),
+                    ),
+                ).Else(
+                    NextValue(error_flag_sig, 1),
+                    NextValue(self.error_counter.status, self.error_counter.status + 1),
+                    NextState("READER_ONLY_ERR_RECIEVE"),
+                )
+            )
+        )
+
+        dram_port_fsm.act(
+            "READER_ONLY_ERR_RECIEVE",
+            self.state_num_sig.status.eq(0x24),
+            self.error_found_flag.status.eq(1),
+            If(error_ack_sig,
+                dram_port.rdata.ready.eq(1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                NextValue(self.total_reads.status, self.total_reads.status + 1),
+                
+                # End of done state in this if statement. Another exists in the
+                # pause state. Basically, decide based on the modes what to set 
+                # the address to, and set it accordingly.
+                If((burst_cntr_sig + 1) >= ((end_address_sig - beg_address_sig) + 1),
+                    NextState("READER_ONLY_FINISH"),
+                ).Else(
+                    NextState("READER_ONLY_RECIEVE"),
+                )
+            )
+        )
+
+        dram_port_fsm.act(
+            "READER_ONLY_FINISH",
+            self.state_num_sig.status.eq(0x25),
+            self.reader_finished_state.status.eq(1),
+            If(self.reader_finished_acknowledge.storage,
+                NextState("IDLE"),
+            )
+        )
+
+
 
         # Set cmd.valid high, wait for cmd.ready.
         # The address_sig signal, beg_address_signal, and end_address_sig signal 
         # should be set before starting at this state.
         dram_port_fsm.act(
             "WRITE_REQUEST",
-            state_num_sig.eq(1),
+            self.state_num_sig.status.eq(0x1),
             dram_port.cmd.we.eq(1),
             dram_port.cmd.valid.eq(1),
             NextValue(self.write_ticks.status, self.write_ticks.status + 1),
@@ -323,7 +574,7 @@ class DRAMBistFSM(Module, AutoCSR):
         # and end_address_sig.
         dram_port_fsm.act(
             "WRITE_REQ_REC",
-            state_num_sig.eq(2),
+            self.state_num_sig.status.eq(0x2),
             dram_port.cmd.we.eq(1),
             dram_port.wdata.valid.eq(1),
             dram_port.cmd.valid.eq(1),
@@ -349,7 +600,7 @@ class DRAMBistFSM(Module, AutoCSR):
         # and end_address_sig.
         dram_port_fsm.act(
             "WRITE_RECIEVE",
-            state_num_sig.eq(3),
+            self.state_num_sig.status.eq(0x3),
             dram_port.cmd.we.eq(1),
             dram_port.wdata.valid.eq(1),
             NextValue(self.write_ticks.status, self.write_ticks.status + 1),
@@ -372,7 +623,7 @@ class DRAMBistFSM(Module, AutoCSR):
         # and proper values given to beg_address_sig and end_address_sig.
         dram_port_fsm.act(
             "READ_REQUEST",
-            state_num_sig.eq(4),
+            self.state_num_sig.status.eq(0x4),
             dram_port.cmd.valid.eq(1),
             NextValue(self.read_ticks.status, self.read_ticks.status + 1),
             If(dram_port.cmd.ready,
@@ -396,7 +647,7 @@ class DRAMBistFSM(Module, AutoCSR):
         # and end_address_sig.
         dram_port_fsm.act(
             "READ_REQ_REC",
-            state_num_sig.eq(5),
+            self.state_num_sig.status.eq(0x5),
             dram_port.cmd.valid.eq(1),
             NextValue(self.read_ticks.status, self.read_ticks.status + 1),
 
@@ -464,12 +715,12 @@ class DRAMBistFSM(Module, AutoCSR):
         # the following pause state.
         dram_port_fsm.act(
             "READ_REQ_REC_ERR_PAUSE",
-            state_num_sig.eq(6),
+            self.state_num_sig.status.eq(0x6),
             dram_port.cmd.valid.eq(1),
             self.error_found_flag.status.eq(1),
             If(dram_port.cmd.ready,
                 If(address_sig == end_address_sig,
-                    If(self.error_acknowledge_flag.storage,
+                    If(error_ack_sig,
                         NextValue(burst_cntr_sig, burst_cntr_sig + 1),
                         NextValue(self.total_reads.status, self.total_reads.status + 1),
                         NextValue(address_sig, address_sig),
@@ -482,7 +733,7 @@ class DRAMBistFSM(Module, AutoCSR):
                 ).Else(
                     NextValue(address_sig, address_sig + 1),
                 )   
-            ).Elif(self.error_acknowledge_flag.storage,
+            ).Elif(error_ack_sig,
                 dram_port.rdata.ready.eq(1),
                 NextValue(burst_cntr_sig, burst_cntr_sig + 1),
                 NextValue(self.total_reads.status, self.total_reads.status + 1),
@@ -494,7 +745,7 @@ class DRAMBistFSM(Module, AutoCSR):
         # the data until finished.
         dram_port_fsm.act(
             "READ_RECIEVE",
-            state_num_sig.eq(7),
+            self.state_num_sig.status.eq(0x7),
             NextValue(self.read_ticks.status, self.read_ticks.status + 1),
             If(dram_port.rdata.valid,
                 If(dram_port.rdata.data == data_sig,
@@ -506,11 +757,7 @@ class DRAMBistFSM(Module, AutoCSR):
                     # pause state. Basically, decide based on the modes what to set 
                     # the address to, and set it accordingly.
                     If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
-                        If(self.read_ticks.status + self.write_ticks.status > self.max_num_ticks.storage,
-                            NextState("DISPLAY_DATA_PAUSE"),
-                        ).Else(
-                            NextState("END_STATE_WAIT_CHOOSER"),
-                        ),
+                        NextState("DISPLAY_DATA_PAUSE"),
                     ),
                 ).Else(
                     NextValue(error_flag_sig, 1),
@@ -524,9 +771,9 @@ class DRAMBistFSM(Module, AutoCSR):
         # A pause state. Stay in here until the errors have been displayed. 
         dram_port_fsm.act(
             "READ_RECIEVE_ERR_PAUSE",
-            state_num_sig.eq(8),
+            self.state_num_sig.status.eq(0x8),
             self.error_found_flag.status.eq(1),
-            If(self.error_acknowledge_flag.storage,
+            If(error_ack_sig,
                 dram_port.rdata.ready.eq(1),
                 NextValue(burst_cntr_sig, burst_cntr_sig + 1),
                 NextValue(self.total_reads.status, self.total_reads.status + 1),
@@ -535,11 +782,7 @@ class DRAMBistFSM(Module, AutoCSR):
                 # pause state. Basically, decide based on the modes what to set 
                 # the address to, and set it accordingly.
                 If((burst_cntr_sig + 1) >= ((end_address_sig - beg_address_sig) + 1),
-                    If(self.read_ticks.status + self.write_ticks.status > self.max_num_ticks.storage,
-                        NextState("DISPLAY_DATA_PAUSE"),
-                    ).Else(
-                        NextState("END_STATE_WAIT_CHOOSER"),
-                    ),
+                    NextState("DISPLAY_DATA_PAUSE"),
                 ).Else(
                     NextState("READ_RECIEVE"),
                 )
@@ -550,7 +793,7 @@ class DRAMBistFSM(Module, AutoCSR):
         # Once we have reached the max number of ticks, pause in this state to display the data
         dram_port_fsm.act(
             "DISPLAY_DATA_PAUSE",
-            state_num_sig.eq(9),
+            self.state_num_sig.status.eq(0x9),
             self.data_pause_display_flag.status.eq(1),
             If(self.data_acknowledge_flag.storage,
                 NextValue(display_data_pause_flag, 1),
@@ -562,7 +805,7 @@ class DRAMBistFSM(Module, AutoCSR):
 
         dram_port_fsm.act(
             "END_STATE_WAIT_CHOOSER",
-            state_num_sig.eq(10),
+            self.state_num_sig.status.eq(0xa),
             NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
             If(delay_tick_ctr_sig >= self.max_delay_ticks.storage,
                 If(display_data_pause_flag,
@@ -628,6 +871,28 @@ class DRAMBistFSM(Module, AutoCSR):
 
 
 
+        """
+        This synch block allows the error acknowledge signal to stay high
+        for only one clock cycle
+        """
+        self.sync += [
+            If(self.error_acknowledge_flag.storage,
+                If(error_ack_high_prev_sig,
+                    error_ack_sig.eq(0),
+                    error_ack_high_prev_sig.eq(1),
+                ).Else(
+                    error_ack_sig.eq(1),
+                    error_ack_high_prev_sig.eq(1),
+                )
+            ).Else(
+                error_ack_sig.eq(0),
+                error_ack_high_prev_sig.eq(0),
+            )
+        ]
+
+
+
+
 
         """
         The data, being fixed, will be concatenated as many times as 
@@ -653,6 +918,7 @@ class DRAMBistFSM(Module, AutoCSR):
 
                 # Get the address range
                 self.beginning_address.status.eq(beg_address_sig),
+                self.current_address.status.eq(address_sig),
                 self.ending_address.status.eq(end_address_sig),
 
                 # Set the port address width and data width, that we can obtain it in software

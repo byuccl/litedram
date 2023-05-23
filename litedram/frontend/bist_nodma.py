@@ -329,9 +329,9 @@ class DRAMBistFSM(Module, AutoCSR):
                 ).Elif(self.reader_only_mode.storage,
                     NextState("READER_ONLY_REQUEST"),
                 )
-                # .Else(
-                #     NextState("WRITE_REQUEST"),
-                # )
+                .Else(
+                    NextState("WRITE_REQUEST"),
+                )
             )
         )
 
@@ -530,326 +530,291 @@ class DRAMBistFSM(Module, AutoCSR):
 
 
 
-        # # Set cmd.valid high, wait for cmd.ready.
-        # # The address_sig signal, beg_address_signal, and end_address_sig signal 
-        # # should be set before starting at this state.
-        # dram_port_fsm.act(
-        #     "WRITE_REQUEST",
-        #     self.state_num_sig.status.eq(0x1),
-        #     dram_port.cmd.we.eq(1),
-        #     dram_port.cmd.valid.eq(1),
-        #     NextValue(self.write_ticks.status, self.write_ticks.status + 1),
-        #     If(dram_port.cmd.ready,
-        #         If(address_sig == end_address_sig,
-        #             NextValue(address_sig, address_sig),
-        #             NextState("WRITE_RECIEVE"),
-        #         ).Else(
-        #             NextValue(address_sig, address_sig + 1),
-        #             NextState("WRITE_REQ_REC"),
-        #         )
-        #     )
-        # )
+        # Set cmd.valid high, wait for cmd.ready.
+        # The address_sig signal, beg_address_signal, and end_address_sig signal 
+        # should be set before starting at this state.
+        dram_port_fsm.act(
+            "WRITE_REQUEST",
+            self.state_num_sig.status.eq(0x1),
+            dram_port.cmd.we.eq(1),
+            dram_port.cmd.valid.eq(1),
+            NextValue(self.write_ticks.status, self.write_ticks.status + 1),
+            If(dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("WRITE_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                    NextState("WRITE_REQ_REC"),
+                )
+            )
+        )
 
-        # # State that runs a burst write. 
-        # # This state should not be left until the number of
-        # # cycles in which cmd.valid and cmd.ready are high 
-        # # match the number of addresses between beg_address_sig
-        # # and end_address_sig.
-        # dram_port_fsm.act(
-        #     "WRITE_REQ_REC",
-        #     self.state_num_sig.status.eq(0x2),
-        #     dram_port.cmd.we.eq(1),
-        #     dram_port.wdata.valid.eq(1),
-        #     dram_port.cmd.valid.eq(1),
-        #     NextValue(self.write_ticks.status, self.write_ticks.status + 1),
-        #     If(dram_port.wdata.ready,
-        #         NextValue(self.total_writes.status, self.total_writes.status + 1),
-        #         NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #     ),
-        #     If(dram_port.cmd.ready,
-        #         If(address_sig == end_address_sig,
-        #             NextValue(address_sig, address_sig),
-        #             NextState("WRITE_RECIEVE"),
-        #         ).Else(
-        #             NextValue(address_sig, address_sig + 1),
-        #         )
-        #     )
-        # )
+        # State that runs a burst write. 
+        # This state should not be left until the number of
+        # cycles in which cmd.valid and cmd.ready are high 
+        # match the number of addresses between beg_address_sig
+        # and end_address_sig.
+        dram_port_fsm.act(
+            "WRITE_REQ_REC",
+            self.state_num_sig.status.eq(0x2),
+            dram_port.cmd.we.eq(1),
+            dram_port.wdata.valid.eq(1),
+            dram_port.cmd.valid.eq(1),
+            NextValue(self.write_ticks.status, self.write_ticks.status + 1),
+            If(dram_port.wdata.ready,
+                NextValue(self.total_writes.status, self.total_writes.status + 1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+            ),
+            If(dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("WRITE_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                )
+            )
+        )
 
-        # # State that finishes up the write transactions.
-        # # This state should not be left until the number of cycles
-        # # in which wdata.valid and wdata.ready are high
-        # # match the number of addresses between beg_address_sig
-        # # and end_address_sig.
-        # dram_port_fsm.act(
-        #     "WRITE_RECIEVE",
-        #     self.state_num_sig.status.eq(0x3),
-        #     dram_port.cmd.we.eq(1),
-        #     dram_port.wdata.valid.eq(1),
-        #     NextValue(self.write_ticks.status, self.write_ticks.status + 1),
-        #     If(dram_port.wdata.ready,
-        #         NextValue(self.total_writes.status, self.total_writes.status + 1),
-        #         NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+        # State that finishes up the write transactions.
+        # This state should not be left until the number of cycles
+        # in which wdata.valid and wdata.ready are high
+        # match the number of addresses between beg_address_sig
+        # and end_address_sig.
+        dram_port_fsm.act(
+            "WRITE_RECIEVE",
+            self.state_num_sig.status.eq(0x3),
+            dram_port.cmd.we.eq(1),
+            dram_port.wdata.valid.eq(1),
+            NextValue(self.write_ticks.status, self.write_ticks.status + 1),
+            If(dram_port.wdata.ready,
+                NextValue(self.total_writes.status, self.total_writes.status + 1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
 
-        #         # We are done with writing a number of bursts 
-        #         # at this "if" statement. 
-        #         If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
-        #             NextValue(burst_cntr_sig, 0),
-        #             NextValue(address_sig, beg_address_sig),
-        #             NextState("READ_REQUEST"),
-        #         ),
-        #     )
-        # )
+                # We are done with writing a number of bursts 
+                # at this "if" statement. 
+                If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
+                    NextValue(burst_cntr_sig, 0),
+                    NextValue(address_sig, beg_address_sig),
+                    NextState("READ_REQUEST"),
+                ),
+            )
+        )
 
-        # # Set cmd.valid high, wait for cmd.ready.
-        # # The address_sig signal should be reset before starting at this state,
-        # # and proper values given to beg_address_sig and end_address_sig.
-        # dram_port_fsm.act(
-        #     "READ_REQUEST",
-        #     self.state_num_sig.status.eq(0x4),
-        #     dram_port.cmd.valid.eq(1),
-        #     NextValue(self.read_ticks.status, self.read_ticks.status + 1),
-        #     If(dram_port.cmd.ready,
-        #        If(address_sig == end_address_sig,
-        #             NextValue(address_sig, address_sig),
-        #             NextState("READ_RECIEVE"),
-        #         ).Else(
-        #             NextValue(address_sig, address_sig + 1),
-        #             NextState("READ_REQ_REC"),
-        #         )
-        #     )
-        # )
+        # Set cmd.valid high, wait for cmd.ready.
+        # The address_sig signal should be reset before starting at this state,
+        # and proper values given to beg_address_sig and end_address_sig.
+        dram_port_fsm.act(
+            "READ_REQUEST",
+            self.state_num_sig.status.eq(0x4),
+            dram_port.cmd.valid.eq(1),
+            NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+            If(dram_port.cmd.ready,
+               If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("READ_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                    NextState("READ_REQ_REC"),
+                )
+            )
+        )
 
-        # # State that runs a burst read. 
-        # # This state must go to the pause state if the data recieved
-        # # does not match expected data, and the address and data registers can
-        # # then be displayed for the user.
-        # # Procedure to the READ_RECIEVE state should not happen until the number of 
-        # # cycles in which cmd.valid and cmd.ready are high 
-        # # match the number of addresses between beg_address_sig
-        # # and end_address_sig.
-        # dram_port_fsm.act(
-        #     "READ_REQ_REC",
-        #     self.state_num_sig.status.eq(0x5),
-        #     dram_port.cmd.valid.eq(1),
-        #     NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+        # State that runs a burst read. 
+        # This state must go to the pause state if the data recieved
+        # does not match expected data, and the address and data registers can
+        # then be displayed for the user.
+        # Procedure to the READ_RECIEVE state should not happen until the number of 
+        # cycles in which cmd.valid and cmd.ready are high 
+        # match the number of addresses between beg_address_sig
+        # and end_address_sig.
+        dram_port_fsm.act(
+            "READ_REQ_REC",
+            self.state_num_sig.status.eq(0x5),
+            dram_port.cmd.valid.eq(1),
+            dram_port.rdata.ready.eq(1),
+            NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+            If(dram_port.rdata.valid,
+                NextValue(self.total_reads.status, self.total_reads.status + 1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
+                If(dram_port.rdata.data != data_sig,
+                    NextValue(self.error_counter.status, self.error_counter.status + 1),
+                    If(error_beg_addr_chosen == 0,
+                       NextValue(self.error_beginning_address.status, self.base_address.storage + burst_cntr_sig),
+                       NextValue(error_beg_addr_chosen, 1),
+                    ),
+                    NextValue(self.error_ending_address.status, self.base_address.storage + burst_cntr_sig),
+                )
+            ),
+            If(dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                    NextValue(address_sig, address_sig),
+                    NextState("READ_RECIEVE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                )
+            )
+        )
 
-        #     # If rdata.valid is high, check the data. If it matches what is 
-        #     # expected, great: increment the total number of reads and the burst
-        #     # counter signal and move on. Otherwise, move to a pause state.
-        #     # If cmd.ready is high, keep the address signal the same and move on
-        #     # to READ_RECIEVE state.
-        #     If(dram_port.rdata.valid & ~dram_port.cmd.ready,
-        #         If(dram_port.rdata.data == data_sig,
-        #             dram_port.rdata.ready.eq(1),
-        #             NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #             NextValue(self.total_reads.status, self.total_reads.status + 1),
-        #         ).Else(
-        #             NextValue(error_flag_sig, 1),
-        #             NextValue(self.error_counter.status, self.error_counter.status + 1),
-        #             NextState("READ_REQ_REC_ERR_PAUSE"),
-        #         )
-        #     ).Elif(~dram_port.rdata.valid & dram_port.cmd.ready,
-        #         If(address_sig == end_address_sig,
-        #             NextValue(address_sig, address_sig),
-        #             NextState("READ_RECIEVE"),
-        #         ).Else(
-        #             NextValue(address_sig, address_sig + 1),
-        #         )
+        # We have reached the final address. Keep handling the reads and comparing 
+        # the data until finished.
+        dram_port_fsm.act(
+            "READ_RECIEVE",
+            self.state_num_sig.status.eq(0x6),
+            dram_port.rdata.ready.eq(1),
+            NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+            If(dram_port.rdata.valid,
+                NextValue(self.total_reads.status, self.total_reads.status + 1),
+                NextValue(burst_cntr_sig, burst_cntr_sig + 1),
 
-        #     # In the case that both rdata.valid and cmd.ready are high, do the following:
-        #     # If rdata.data match and we have reached the end of addressing, great: simply 
-        #     # increment burst counter signal, increment total-reads, and move on to READ_RECIEVE.
-        #     # If we haven't reached the last address, do the same but instead of moving on to a state, 
-        #     # increment the address and stay in this one.
-        #     # If the data doesn't match and we have reached the last address, keep the address
-        #     # the same but move on to the READ_RECIEVE_ERR_PAUSE state, where we no longer
-        #     # need to worry about the cmd signal.
-        #     # If the data doesn't match and we haven't read the last address, move on to 
-        #     # the READ_REQ_REC_ERR_PAUSE state, where we still use the cmd signal.
-        #     ).Elif(dram_port.rdata.valid & dram_port.cmd.ready,
-        #         If(((data_sig == dram_port.rdata.data) & (address_sig == end_address_sig)),
-        #             dram_port.rdata.ready.eq(1),
-        #             NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #             NextValue(self.total_reads.status, self.total_reads.status + 1),
-        #             NextValue(address_sig, address_sig),
-        #             NextState("READ_RECIEVE"),
-        #         ).Elif(((dram_port.rdata.data == data_sig) & (address_sig != end_address_sig)),
-        #             dram_port.rdata.ready.eq(1),
-        #             NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #             NextValue(self.total_reads.status, self.total_reads.status + 1),
-        #             NextValue(address_sig, address_sig + 1),
-        #         ).Elif(((dram_port.rdata.data != data_sig) & (address_sig == end_address_sig)),
-        #             NextValue(address_sig, address_sig),
-        #             NextValue(self.error_counter.status, self.error_counter.status + 1),
-        #             NextValue(error_flag_sig, 1),
-        #             NextState("READ_RECIEVE_ERR_PAUSE"),
-        #         ).Else(
-        #             NextValue(address_sig, address_sig + 1),
-        #             NextValue(self.error_counter.status, self.error_counter.status + 1),
-        #             NextValue(error_flag_sig, 1),
-        #             NextState("READ_REQ_REC_ERR_PAUSE"),
-        #         )
-        #     )
-        # )
+                # We are done with writing a number of bursts 
+                # at this "if" statement. 
+                If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
+                    NextState("DISPLAY_DATA_PAUSE"),
+                    If(dram_port.rdata.data != data_sig,
+                        NextValue(self.error_counter.status, self.error_counter.status + 1),
+                        If(error_beg_addr_chosen == 0,
+                            NextValue(self.error_beginning_address.status, self.base_address.storage + burst_cntr_sig),
+                            NextValue(address_sig, self.base_address.storage + burst_cntr_sig),
+                            NextValue(error_beg_addr_chosen, 1),
+                        ).Else(
+                            NextValue(address_sig, self.error_beginning_address.status),
+                        ),
+                        NextValue(self.error_ending_address.status, self.base_address.storage + burst_cntr_sig),
+                        NextState("READ_ERR_REQ"), 
+                    ).Elif(self.error_counter.status > 0,
+                        NextValue(address_sig, self.error_beginning_address.status),
+                        NextState("READ_ERR_REQ"),
+                    ),
+                ).Else(
+                    If(dram_port.rdata.data != data_sig,
+                        NextValue(self.error_counter.status, self.error_counter.status + 1),
+                        If(error_beg_addr_chosen == 0,
+                            NextValue(self.error_beginning_address.status, self.base_address.storage + burst_cntr_sig),
+                            NextValue(error_beg_addr_chosen, 1),
+                        ),
+                        NextValue(self.error_ending_address.status, self.base_address.storage + burst_cntr_sig),
+                    )
+                )
+            )
+        )
 
-        # # A pause state. Remain here until the User siganls the registers have been used, time to move on.
-        # # Meanwhile handle the cmd signals until the address has reached the end. If it does, move on to
-        # # the following pause state.
-        # dram_port_fsm.act(
-        #     "READ_REQ_REC_ERR_PAUSE",
-        #     self.state_num_sig.status.eq(0x6),
-        #     dram_port.cmd.valid.eq(1),
-        #     self.error_found_flag.status.eq(1),
-        #     If(dram_port.cmd.ready,
-        #         If(address_sig == end_address_sig,
-        #             If(error_ack_sig,
-        #                 NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #                 NextValue(self.total_reads.status, self.total_reads.status + 1),
-        #                 NextValue(address_sig, address_sig),
-        #                 NextState("READ_RECIEVE"),
-        #             ).Else(
-        #                 NextValue(address_sig, address_sig),
-        #                 NextValue(error_flag_sig, 1),
-        #                 NextState("READ_RECIEVE_ERR_PAUSE"),
-        #             )
-        #         ).Else(
-        #             NextValue(address_sig, address_sig + 1),
-        #         )   
-        #     ).Elif(error_ack_sig,
-        #         dram_port.rdata.ready.eq(1),
-        #         NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #         NextValue(self.total_reads.status, self.total_reads.status + 1),
-        #         NextState("READ_REQ_REC"),
-        #     )
-        # )
+        dram_port_fsm.act(
+            "READ_ERR_REQ",
+            self.state_num_sig.status.eq(0x7),
+            dram_port.cmd.valid.eq(1),
+            If(dram_port.cmd.ready,
+                NextState("READ_ERR_REC"),
+            )
+        )
 
-        # # We have reached the final address. Keep handling the reads and comparing 
-        # # the data until finished.
-        # dram_port_fsm.act(
-        #     "READ_RECIEVE",
-        #     self.state_num_sig.status.eq(0x7),
-        #     NextValue(self.read_ticks.status, self.read_ticks.status + 1),
-        #     If(dram_port.rdata.valid,
-        #         If(dram_port.rdata.data == data_sig,
-        #             dram_port.rdata.ready.eq(1),
-        #             NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #             NextValue(self.total_reads.status, self.total_reads.status + 1),
+        dram_port_fsm.act(
+            "READ_ERR_REC",
+            self.state_num_sig.status.eq(0x8),
+            dram_port.rdata.ready.eq(1),
+            If(dram_port.rdata.valid,
+                NextValue(self.error_data, dram_port.rdata.data),
+                NextState("READ_ERR_DISPLAY"),
+            )
+        )
 
-        #             # End of done state in this if statement. Another exists in the
-        #             # pause state. Basically, decide based on the modes what to set 
-        #             # the address to, and set it accordingly.
-        #             If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
-        #                 NextState("DISPLAY_DATA_PAUSE"),
-        #             ),
-        #         ).Else(
-        #             NextValue(error_flag_sig, 1),
-        #             NextValue(self.error_counter.status, self.error_counter.status + 1),
-        #             NextState("READ_RECIEVE_ERR_PAUSE"),
-        #         )
-        #     )
-        # )
+        dram_port_fsm.act(
+            "READ_ERR_DISPLAY",
+            self.state_num_sig.status.eq(0x9),
+            If(self.start.storage == 0,
+                NextState("IDLE"),
+            ).Elif((self.error_data == data_sig) | error_ack_sig,
+                If(address_sig == self.error_ending_address.status,
+                    NextState("DISPLAY_DATA_PAUSE"),
+                ).Else(
+                    NextValue(address_sig, address_sig + 1),
+                    NextState("READ_ERR_REQ"),
+                )
+            ).Else(
+                self.error_found_flag.status.eq(1),
+            )
+        )
 
 
-        # # A pause state. Stay in here until the errors have been displayed. 
-        # dram_port_fsm.act(
-        #     "READ_RECIEVE_ERR_PAUSE",
-        #     self.state_num_sig.status.eq(0x8),
-        #     self.error_found_flag.status.eq(1),
-        #     If(error_ack_sig,
-        #         dram_port.rdata.ready.eq(1),
-        #         NextValue(burst_cntr_sig, burst_cntr_sig + 1),
-        #         NextValue(self.total_reads.status, self.total_reads.status + 1),
-                
-        #         # End of done state in this if statement. Another exists in the
-        #         # pause state. Basically, decide based on the modes what to set 
-        #         # the address to, and set it accordingly.
-        #         If((burst_cntr_sig + 1) >= ((end_address_sig - beg_address_sig) + 1),
-        #             NextState("DISPLAY_DATA_PAUSE"),
-        #         ).Else(
-        #             NextState("READ_RECIEVE"),
-        #         )
-        #     )
-        # )
-
-
-        # # Once we have reached the max number of ticks, pause in this state to display the data
-        # dram_port_fsm.act(
-        #     "DISPLAY_DATA_PAUSE",
-        #     self.state_num_sig.status.eq(0x9),
-        #     self.data_pause_display_flag.status.eq(1),
-        #     If(self.data_acknowledge_flag.storage,
-        #         NextValue(display_data_pause_flag, 1),
-        #         NextState("END_STATE_WAIT_CHOOSER"),
-        #     )
-        # )
+        # Once we have reached the max number of ticks, pause in this state to display the data
+        dram_port_fsm.act(
+            "DISPLAY_DATA_PAUSE",
+            self.state_num_sig.status.eq(0xa),
+            self.data_pause_display_flag.status.eq(1),
+            If(self.start.storage == 0,
+                NextState("IDLE"),
+            ).Elif(self.data_acknowledge_flag.storage,
+                NextValue(display_data_pause_flag, 1),
+                NextState("END_STATE_WAIT_CHOOSER"),
+            )
+        )
 
 
 
-        # dram_port_fsm.act(
-        #     "END_STATE_WAIT_CHOOSER",
-        #     self.state_num_sig.status.eq(0xa),
-        #     NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
-        #     If(delay_tick_ctr_sig >= self.max_delay_ticks.storage,
-        #         If(display_data_pause_flag,
-        #             NextValue(display_data_pause_flag, 0),
-        #             NextValue(self.write_ticks.status, 0),
-        #             NextValue(self.read_ticks.status, 0),
-        #             NextValue(self.total_writes.status, 0),
-        #             NextValue(self.total_reads.status, 0),
-        #             NextValue(burst_cntr_sig, 0),
-        #         ),
-        #         NextValue(delay_tick_ctr_sig, 0),
-        #         If(~self.start.storage,
-        #             NextState("IDLE"),
-        #         ).Elif(self.address_mode.storage == FIXED_ADDR_MODE,
-        #             NextValue(address_sig, beg_address_sig),
-        #             If(self.wr_mode.storage == W_ONCE_R_ALWAYS,
-        #                 NextState("READ_REQUEST")
-        #             ).Elif(self.wr_mode.storage == WR_ALWAYS,
-        #                 NextState("WRITE_REQUEST")
-        #             )
-        #         ).Elif(self.address_mode.storage == INCR_ADDR_MODE,
-        #             If(self.wr_mode.storage == W_ONCE_R_ALWAYS,
-        #                 # If overflow occurs when assigning the new values, 
-        #                 # revert the new addresses back to the original ones.
-        #                 If(error_flag_sig,
-        #                     NextValue(beg_address_sig, beg_address_sig),
-        #                     NextValue(address_sig, beg_address_sig),
-        #                     NextValue(end_address_sig, end_address_sig),
-        #                     NextState("WRITE_REQUEST"),
-        #                 ).Elif((beg_address_sig >= (end_address_sig + self.length_address.storage + 1)) | 
-        #                     (end_address_sig >= self.end_address.storage),
-        #                     NextValue(beg_address_sig, self.base_address.storage),
-        #                     NextValue(address_sig, self.base_address.storage),
-        #                     NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
-        #                     NextValue(read_always_flag_sig, 1),
-        #                     NextState("READ_REQUEST"),
-        #                 ).Else(
-        #                     NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
-        #                     NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
-        #                     NextValue(end_address_sig, end_address_sig + self.length_address.storage + 1),
-        #                     If(read_always_flag_sig,
-        #                         NextState("READ_REQUEST"),   
-        #                     ).Else(
-        #                         NextState("WRITE_REQUEST"),
-        #                     )
-        #                 ),
-        #             ).Elif(self.wr_mode.storage == WR_ALWAYS,
-        #                 If(beg_address_sig >= (end_address_sig + self.length_address.storage + 1),
-        #                     NextValue(beg_address_sig, self.base_address.storage),
-        #                     NextValue(address_sig, self.base_address.storage),
-        #                     NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
-        #                 ).Else(
-        #                     NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
-        #                     NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
-        #                     NextValue(end_address_sig, end_address_sig + self.length_address.storage + 1),
-        #                 ),
-        #                 NextState("WRITE_REQUEST"),
-        #             )
-        #         )   
-        #     )
-        # )
+        dram_port_fsm.act(
+            "END_STATE_WAIT_CHOOSER",
+            self.state_num_sig.status.eq(0xb),
+            NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
+            If(delay_tick_ctr_sig >= self.max_delay_ticks.storage,
+                If(display_data_pause_flag,
+                    NextValue(display_data_pause_flag, 0),
+                    NextValue(self.write_ticks.status, 0),
+                    NextValue(self.read_ticks.status, 0),
+                    NextValue(self.total_writes.status, 0),
+                    NextValue(self.total_reads.status, 0),
+                    NextValue(burst_cntr_sig, 0),
+                ),
+                NextValue(delay_tick_ctr_sig, 0),
+                If(~self.start.storage,
+                    NextState("IDLE"),
+                ).Elif(self.address_mode.storage == FIXED_ADDR_MODE,
+                    NextValue(address_sig, beg_address_sig),
+                    If(self.wr_mode.storage == W_ONCE_R_ALWAYS,
+                        NextState("READ_REQUEST")
+                    ).Elif(self.wr_mode.storage == WR_ALWAYS,
+                        NextState("WRITE_REQUEST")
+                    )
+                ).Elif(self.address_mode.storage == INCR_ADDR_MODE,
+                    If(self.wr_mode.storage == W_ONCE_R_ALWAYS,
+                        # If overflow occurs when assigning the new values, 
+                        # revert the new addresses back to the original ones.
+                        If(error_flag_sig,
+                            NextValue(beg_address_sig, beg_address_sig),
+                            NextValue(address_sig, beg_address_sig),
+                            NextValue(end_address_sig, end_address_sig),
+                            NextState("WRITE_REQUEST"),
+                        ).Elif((beg_address_sig >= (end_address_sig + self.length_address.storage + 1)) | 
+                            (end_address_sig >= self.end_address.storage),
+                            NextValue(beg_address_sig, self.base_address.storage),
+                            NextValue(address_sig, self.base_address.storage),
+                            NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
+                            NextValue(read_always_flag_sig, 1),
+                            NextState("READ_REQUEST"),
+                        ).Else(
+                            NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
+                            NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
+                            NextValue(end_address_sig, end_address_sig + self.length_address.storage + 1),
+                            If(read_always_flag_sig,
+                                NextState("READ_REQUEST"),   
+                            ).Else(
+                                NextState("WRITE_REQUEST"),
+                            )
+                        ),
+                    ).Elif(self.wr_mode.storage == WR_ALWAYS,
+                        If(beg_address_sig >= (end_address_sig + self.length_address.storage + 1),
+                            NextValue(beg_address_sig, self.base_address.storage),
+                            NextValue(address_sig, self.base_address.storage),
+                            NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
+                        ).Else(
+                            NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
+                            NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
+                            NextValue(end_address_sig, end_address_sig + self.length_address.storage + 1),
+                        ),
+                        NextState("WRITE_REQUEST"),
+                    )
+                )   
+            )
+        )
 
 
 

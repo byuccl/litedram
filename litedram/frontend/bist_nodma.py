@@ -389,8 +389,8 @@ class DRAMBistFSM(Module, AutoCSR):
 
         # The middle state of the "write_only" mode. Both wdata.valid
         # and cmd.valid are set high while holding the cmd.we signal high.
-        # The address is compared to the last desired address to write to,
-        # and for every transition the address doesn't match, it is 
+        # The current address is compared to the last desired address to write to,
+        # and for every transition the address doesn't match, the current address is 
         # incremented. When it matches, a transition will occur to the 
         # writer_only recieve state - this signifies we have sent commands 
         # to write to all the addresses in our range we have specified. 
@@ -459,7 +459,8 @@ class DRAMBistFSM(Module, AutoCSR):
         # occur if the signal cmd.ready is high.
         # If only a single address is input (i.e. the register 
         # length_address is set to zero), a transition will go to
-        # the reader_only_recieve state, else a transition will go
+        # the reader_only_recieve statewhere a burst read 
+        # may occur, else a transition will go
         # to the reader_only recieve and request state.
         dram_port_fsm.act(
             "READER_ONLY_REQUEST",
@@ -482,7 +483,7 @@ class DRAMBistFSM(Module, AutoCSR):
         # not held here; an error counter simply increments if 
         # the data does not match what is expected. If errors 
         # are found, the address where the errors start and 
-        # the address where the errors end are saved to reduce
+        # the address where the errors end are both saved to reduce
         # time when running the single reads with the three 
         # error-reading states. Once the address reaches the last 
         # in the range that the user has set, we have sent commands 
@@ -518,14 +519,15 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
-        # The last state of the "read only" mode. The signal rdata.ready
+        # The third state of the "read only" mode. The signal rdata.ready
         # is continuously set high. A transition will only occur to the 
         # "READER_ONLY_FINISH" state if no data errors are found. The 
         # number of reads is continuously measured, incremented every
         # time rdata.ready is set high. The number of errors is also 
         # kept track of as well.
-        # Once the reads are finished (the number of reads matches
-        # the number of addresses sent to the controller):
+        # Once the reads are finished (i.e. the number of reads matches
+        # the number of addresses sent to the controller), a transition
+        # is taken base on these statements:
         # - If erros were counted, go to the "READER_ONLY_ERR_REQ" state
         # - If errors were not counted, but the last read is an error, 
         # go to the "READER_ONLY_ERR_REQ" state.
@@ -622,6 +624,11 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
+        # The final state of the "read-only" mode. All reading
+        # has been finished, including errors, and the User must
+        # print out a summary taken from the CSR registers. Pause
+        # here and wait until program has finished printing out 
+        # everything from the registers.
         dram_port_fsm.act(
             "READER_ONLY_FINISH",
             self.state_num_sig.status.eq(0x26),
@@ -632,10 +639,13 @@ class DRAMBistFSM(Module, AutoCSR):
         )
 
 
-
-        # Set cmd.valid high, wait for cmd.ready.
-        # The address_sig signal, beg_address_signal, and end_address_sig signal 
-        # should be set before starting at this state.
+        # The beginning state of the continuous mode. The signals
+        # cmd.we and cmd.valid are set high. A transition will only 
+        # occur if the signal cmd.ready is high.
+        # If only a single address is input (i.e. the register 
+        # length_address is set to zero), a transition will go to
+        # the writer_only_recieve state, else a transition will go
+        # to the writer_only recieve and request state.
         dram_port_fsm.act(
             "WRITE_REQUEST",
             self.state_num_sig.status.eq(0x1),
@@ -653,11 +663,15 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
-        # State that runs a burst write. 
-        # This state should not be left until the number of
-        # cycles in which cmd.valid and cmd.ready are high 
-        # match the number of addresses between beg_address_sig
-        # and end_address_sig.
+        # The second state of the continuous mode. Both wdata.valid
+        # and cmd.valid are set high while holding the cmd.we signal high.
+        # The current address is compared to the last desired address to write to,
+        # and for every transition the address doesn't match, the current address is 
+        # incremented. When it matches, a transition will occur to the 
+        # writer_only recieve state - this signifies we have sent commands 
+        # to write to all the addresses in our range we have specified. 
+        # The number of writes is recorded and incremented every time 
+        # wdata.ready goes high.
         dram_port_fsm.act(
             "WRITE_REQ_REC",
             self.state_num_sig.status.eq(0x2),
@@ -679,11 +693,12 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
-        # State that finishes up the write transactions.
-        # This state should not be left until the number of cycles
-        # in which wdata.valid and wdata.ready are high
-        # match the number of addresses between beg_address_sig
-        # and end_address_sig.
+        # The third state of the continuous mode. All the addresses to write 
+        # have been set; now we wait for all the writes to finish while 
+        # wdata.valid is held high, all while keeping track of the number of
+        # writes occuring when wdata.ready goes high. A transition to 
+        # "READ_REQUEST" is taken once the number of writes match the 
+        # number of addresses we've written to.
         dram_port_fsm.act(
             "WRITE_RECIEVE",
             self.state_num_sig.status.eq(0x3),
@@ -704,9 +719,14 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
-        # Set cmd.valid high, wait for cmd.ready.
-        # The address_sig signal should be reset before starting at this state,
-        # and proper values given to beg_address_sig and end_address_sig.
+        # The fourth state of the continuous mode. The signal
+        # cmd.valid are set high. A transition will only 
+        # occur if the signal cmd.ready is high.
+        # If only a single address is input (i.e. the register 
+        # length_address is set to zero), a transition will go to
+        # the reader_only_recieve state where a burst read 
+        # may occur, else a transition will go
+        # to the reader_only recieve and request state.
         dram_port_fsm.act(
             "READ_REQUEST",
             self.state_num_sig.status.eq(0x4),
@@ -723,14 +743,19 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
-        # State that runs a burst read. 
-        # This state must go to the pause state if the data recieved
-        # does not match expected data, and the address and data registers can
-        # then be displayed for the user.
-        # Procedure to the READ_RECIEVE state should not happen until the number of 
-        # cycles in which cmd.valid and cmd.ready are high 
-        # match the number of addresses between beg_address_sig
-        # and end_address_sig.
+        # The fifth state of the continuous mode. The signals 
+        # cmd.valid and rdata.ready are held high. The data is 
+        # not held here; an error counter simply increments if 
+        # the data does not match what is expected. If errors 
+        # are found, the address where the errors start and 
+        # the address where the errors end are both saved to reduce
+        # time when running the single reads with the three 
+        # error-reading states. Once the address reaches the last 
+        # in the range that the user has set, we have sent commands 
+        # to read from all the addresses in our range we have 
+        # specified, and a transition to the "reader_only_recieve" 
+        # state will occur. The number of reads is recorded and 
+        # incremented every time rdata.ready goes high. 
         dram_port_fsm.act(
             "READ_REQ_REC",
             self.state_num_sig.status.eq(0x5),
@@ -760,8 +785,19 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
-        # We have reached the final address. Keep handling the reads and comparing 
-        # the data until finished.
+        # The third state of the continuous mode. The signal rdata.ready
+        # is continuously set high. A transition will only occur to the 
+        # "DISPLAY_DATA_PAUSE" state if no data errors are found. The 
+        # number of reads is continuously measured, incremented every
+        # time rdata.ready is set high. The number of errors is also 
+        # kept track of as well.
+        # Once the reads are finished (i.e. the number of reads matches
+        # the number of addresses sent to the controller), a transition
+        # is taken base on these statements:
+        # - If erros were counted, go to the "READ_ERR_REQ" state
+        # - If errors were not counted, but the last read is an error, 
+        # go to the "READ_ERR_REQ" state.
+        # - Else go to the "DISPLAY_DATA_PAUSE" state.
         dram_port_fsm.act(
             "READ_RECIEVE",
             self.state_num_sig.status.eq(0x6),
@@ -805,6 +841,12 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
+        # The first error-reading state of the continuous mode.
+        # The reading has been finished, and there are errors.
+        # Beginning at the first address where errors occured, 
+        # do a single read. Set cmd.valid high, and wait for 
+        # cmd.ready to go high. The address is set in a comb
+        # block at the end of this page.
         dram_port_fsm.act(
             "READ_ERR_REQ",
             self.state_num_sig.status.eq(0x7),
@@ -814,6 +856,11 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
+        # The second error-reading state of the continuous mode.
+        # The reading has been finished, and there are errors.
+        # Now that cmd.ready was set high with the appropriate 
+        # address, set rdata.ready high and wait for rdata.valid 
+        # to go high.
         dram_port_fsm.act(
             "READ_ERR_REC",
             self.state_num_sig.status.eq(0x8),
@@ -824,6 +871,12 @@ class DRAMBistFSM(Module, AutoCSR):
             )
         )
 
+        # The third error-reading state of the "read only" mode.
+        # The reading has been finished, and there are errors.
+        # Beginning at the first address where errors occured, 
+        # do a single read. Set cmd.valid high, and wait for 
+        # cmd.ready to go high. The address is set in a comb
+        # block at the end of this page.
         dram_port_fsm.act(
             "READ_ERR_DISPLAY",
             self.state_num_sig.status.eq(0x9),
@@ -842,7 +895,11 @@ class DRAMBistFSM(Module, AutoCSR):
         )
 
 
-        # Once we have reached the max number of ticks, pause in this state to display the data
+        # The final state of the continuous mode. All reading
+        # has been finished, including errors, and the User must
+        # print out a summary taken from the CSR registers. Pause
+        # here and wait until program has finished printing out 
+        # everything from the registers.
         dram_port_fsm.act(
             "DISPLAY_DATA_PAUSE",
             self.state_num_sig.status.eq(0xa),
@@ -855,7 +912,24 @@ class DRAMBistFSM(Module, AutoCSR):
         )
 
 
-        # 
+        # Now that all reading has been finished, wait for a set
+        # amount of clock cycles (specified by software program
+        # controlling the CSR register) and choose what to do next:
+        # * If the state machine is disabled (i.e. the start CSR 
+        # register is set low), return to the "IDLE" state.
+        # * Else if the state machine is in fixed address mode,
+        # the 'beg_address' and 'end_address' signals are already
+        # set. Depending on if the state machine is in write-once 
+        # or write-always mode, go to the "READ_REQUEST" state or 
+        # the "WRITE_REQUEST" state, respectively.
+        # * Else if the mode is in increment address mode,
+        # the 'beg_address' and the 'end_address' signals need
+        # to be set to cover the next set of addresses above the 
+        # original. Scrubbing will only happen if there were 
+        # errors found during the previous read. If there were, the flag
+        # error_flag_sig will go high, and the state machine will
+        # head to the "WRITE_REQUEST" state to write the pattern 
+        # to all the current addresses again without incrementing them.
         dram_port_fsm.act(
             "END_STATE_WAIT_CHOOSER",
             self.state_num_sig.status.eq(0xb),
@@ -886,7 +960,7 @@ class DRAMBistFSM(Module, AutoCSR):
                             NextValue(end_address_sig, end_address_sig),
                             NextValue(error_flag_sig, 0),
                             NextState("WRITE_REQUEST"),
-                        ).Elif((beg_address_sig >= (end_address_sig + self.length_address.storage + 1)) | 
+                        ).Elif((read_always_flag_sig == 0) & (beg_address_sig >= (end_address_sig + self.length_address.storage + 1)) | 
                             (end_address_sig >= self.end_address.storage),
                             NextValue(beg_address_sig, self.base_address.storage),
                             NextValue(address_sig, self.base_address.storage),
@@ -981,7 +1055,12 @@ class DRAMBistFSM(Module, AutoCSR):
                 dram_port.wdata.we.eq(~0),
 
                 # Set the data to write with a replicated CSR register
-                data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
+                If((address_sig <= 0x1000) & (dram_port.cmd.we == 1),
+                    data_sig.eq(0),
+                ).Else(
+                    data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
+                ),
+                # data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
                 dram_port.wdata.data.eq(data_sig),
 
             ]

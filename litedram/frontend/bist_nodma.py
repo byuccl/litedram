@@ -17,6 +17,7 @@ DATA_WIDTH_32 = 32
 ONE_BIT_WIDE = 1
 TWO_BITS_WIDE = 2
 WIDTH_32_BITS = 32
+WIDTH_64_BITS = 64
 
 FIXED_ADDR_MODE = 0
 INCR_ADDR_MODE = 1
@@ -76,9 +77,10 @@ next set, and so forth. This is compatible with both address modes.
 
 class DRAMBistFSM(Module, AutoCSR):
     
-    def __init__(self, dram_port : LiteDRAMNativePort):
+    def __init__(self, dram_port : LiteDRAMNativePort, sys_clk_freq : int):
 
         self.dram_port_bist = dram_port
+
 
 
         # Registers
@@ -213,7 +215,7 @@ class DRAMBistFSM(Module, AutoCSR):
         self.data_acknowledge_flag = CSRStorage(ONE_BIT_WIDE, description="Acknowledge to the state machine, after its stopped, that it can now display the needed data.")
 
         # A register to hold the number of ticks to delay after a complete read
-        self.max_delay_ticks = CSRStorage(WIDTH_32_BITS, description="Total number of ticks to delay after a read")
+        self.seconds_delay = CSRStorage(WIDTH_32_BITS, description="Total number of seconds to delay after a read")
 
         # Registers to get the beginning and ending addresses
         self.beginning_address = CSRStatus(WIDTH_32_BITS, description="The address in which the BIST starts at")
@@ -254,7 +256,10 @@ class DRAMBistFSM(Module, AutoCSR):
         error_flag_sig = Signal(ONE_BIT_WIDE)
 
         # A signal counter to count up to the max delay of ticks
-        delay_tick_ctr_sig = Signal(WIDTH_32_BITS)
+        delay_tick_ctr_sig = Signal(WIDTH_64_BITS)
+
+        # A signal that is set to the number of seconds times the number of clock cycles per second
+        delay_max_ticks_sig = Signal(WIDTH_64_BITS)
 
         # Allow error acknowledge signal to stay high for one clock signal.
         error_ack_sig = Signal(ONE_BIT_WIDE)
@@ -934,7 +939,7 @@ class DRAMBistFSM(Module, AutoCSR):
             "END_STATE_WAIT_CHOOSER",
             self.state_num_sig.status.eq(0xb),
             NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
-            If(delay_tick_ctr_sig >= self.max_delay_ticks.storage,
+            If(delay_tick_ctr_sig >= delay_max_ticks_sig,
                 NextValue(self.write_ticks.status, 0),
                 NextValue(self.read_ticks.status, 0),
                 NextValue(self.total_writes.status, 0),
@@ -990,6 +995,8 @@ class DRAMBistFSM(Module, AutoCSR):
                         NextState("WRITE_REQUEST"),
                     )
                 )   
+            ).Elif(~self.start.storage,
+                NextState("IDLE"),
             )
         )
 
@@ -1068,6 +1075,9 @@ class DRAMBistFSM(Module, AutoCSR):
                 # Set the data to write with a replicated CSR register
                 data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
                 dram_port.wdata.data.eq(data_sig),
+
+                # Set the number of cycles to delay based on the number of seconds specified
+                delay_max_ticks_sig.eq(self.seconds_delay.storage * sys_clk_freq),
 
             ]
 

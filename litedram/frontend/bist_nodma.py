@@ -252,6 +252,10 @@ class DRAMBistFSM(Module, AutoCSR):
         # A signal to record if it is time to only read. Useful for "write once read always" setting.
         read_always_flag_sig = Signal(ONE_BIT_WIDE)
 
+        # A signal, for the condition of write once read always mode, that we are scrubbing
+        # and need to reach all the addresses.
+        scrubbing_flag_sig = Signal(ONE_BIT_WIDE)
+
         # A signal to record if an error occured. Useful for "write once read always" setting
         error_flag_sig = Signal(ONE_BIT_WIDE)
 
@@ -271,8 +275,8 @@ class DRAMBistFSM(Module, AutoCSR):
         # Helper to record beginning error address
         error_beg_addr_chosen = Signal(ONE_BIT_WIDE)
 
-        
-
+        # A signal holding the maximum address possible
+        max_address_sig = Signal(dram_port.address_width)
 
         # A debug signal to find out which states we are in
         self.state_num_sig = CSRStatus(WIDTH_32_BITS)
@@ -354,6 +358,7 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextValue(self.error_beginning_address.status, 0),
                 NextValue(self.error_ending_address.status, 0),
                 NextValue(error_beg_addr_chosen, 0),
+                NextValue(scrubbing_flag_sig, 0),
                 NextValue(address_sig, self.base_address.storage),
                 NextValue(beg_address_sig, self.base_address.storage),
                 NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
@@ -689,9 +694,16 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextValue(burst_cntr_sig, burst_cntr_sig + 1),
             ),
             If(dram_port.cmd.ready,
-                If(address_sig == end_address_sig,
+                If((address_sig == end_address_sig) | 
+                   ((address_sig == max_address_sig) & 
+                    (self.wr_mode.storage == W_ONCE_R_ALWAYS) & 
+                    (self.address_mode.storage == INCR_ADDR_MODE) & 
+                    (scrubbing_flag_sig == 0)),
                     NextValue(address_sig, address_sig),
                     NextState("WRITE_RECIEVE"),
+                    If((address_sig == MAX_ADDRESS) & (self.wr_mode.storage == W_ONCE_R_ALWAYS) & (self.address_mode.storage == INCR_ADDR_MODE),
+                       NextValue(read_always_flag_sig, 1),
+                    )
                 ).Else(
                     NextValue(address_sig, address_sig + 1),
                 )
@@ -716,9 +728,11 @@ class DRAMBistFSM(Module, AutoCSR):
 
                 # We are done with writing a number of bursts 
                 # at this "if" statement. 
-                If((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1),
+                If(((burst_cntr_sig + 1) >= (end_address_sig - beg_address_sig + 1)) | 
+                   (((burst_cntr_sig + address_sig) == max_address_sig) & read_always_flag_sig & (scrubbing_flag_sig == 0)),
                     NextValue(burst_cntr_sig, 0),
                     NextValue(address_sig, beg_address_sig),
+                    NextValue(scrubbing_flag_sig, 0),
                     NextState("READ_REQUEST"),
                 ),
             )
@@ -964,14 +978,8 @@ class DRAMBistFSM(Module, AutoCSR):
                             NextValue(address_sig, beg_address_sig),
                             NextValue(end_address_sig, end_address_sig),
                             NextValue(error_flag_sig, 0),
+                            NextValue(scrubbing_flag_sig, 1),
                             NextState("WRITE_REQUEST"),
-                        ).Elif((read_always_flag_sig == 0) & (beg_address_sig >= (end_address_sig + self.length_address.storage + 1)) | 
-                            (end_address_sig >= self.end_address.storage),
-                            NextValue(beg_address_sig, self.base_address.storage),
-                            NextValue(address_sig, self.base_address.storage),
-                            NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
-                            NextValue(read_always_flag_sig, 1),
-                            NextState("READ_REQUEST"),
                         ).Else(
                             NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
                             NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
@@ -1078,6 +1086,9 @@ class DRAMBistFSM(Module, AutoCSR):
 
                 # Set the number of cycles to delay based on the number of seconds specified
                 delay_max_ticks_sig.eq(self.seconds_delay.storage * sys_clk_freq),
+
+                # Set this signal to the maximum address
+                max_address_sig.eq(~0),
 
             ]
 

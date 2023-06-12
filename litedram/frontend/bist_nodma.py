@@ -701,7 +701,7 @@ class DRAMBistFSM(Module, AutoCSR):
                     (scrubbing_flag_sig == 0)),
                     NextValue(address_sig, address_sig),
                     NextState("WRITE_RECIEVE"),
-                    If((address_sig == MAX_ADDRESS) & (self.wr_mode.storage == W_ONCE_R_ALWAYS) & (self.address_mode.storage == INCR_ADDR_MODE),
+                    If((address_sig == max_address_sig) & (self.wr_mode.storage == W_ONCE_R_ALWAYS) & (self.address_mode.storage == INCR_ADDR_MODE),
                        NextValue(read_always_flag_sig, 1),
                     )
                 ).Else(
@@ -981,9 +981,18 @@ class DRAMBistFSM(Module, AutoCSR):
                             NextValue(scrubbing_flag_sig, 1),
                             NextState("WRITE_REQUEST"),
                         ).Else(
-                            NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
-                            NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
-                            NextValue(end_address_sig, end_address_sig + self.length_address.storage + 1),
+                            # NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
+                            # NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
+                            # NextValue(end_address_sig, end_address_sig + self.length_address.storage + 1),
+                            If(beg_address_sig >= (end_address_sig + self.length_address.storage + 1),
+                                NextValue(beg_address_sig, self.base_address.storage),
+                                NextValue(address_sig, self.base_address.storage),
+                                NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
+                            ).Else(
+                                NextValue(beg_address_sig, beg_address_sig + self.length_address.storage + 1),
+                                NextValue(address_sig, beg_address_sig + self.length_address.storage + 1),
+                                NextValue(end_address_sig, end_address_sig + self.length_address.storage + 1),
+                            ),
                             If(read_always_flag_sig,
                                 NextState("READ_REQUEST"),   
                             ).Else(
@@ -1071,9 +1080,9 @@ class DRAMBistFSM(Module, AutoCSR):
 
                 # # For debugging
                 # #######################################################
-                # If((burst_cntr_sig <= 0xf) & (dram_port.cmd.we) & (dram_port.wdata.valid),
+                # If((burst_cntr_sig <= 0x2) & (dram_port.cmd.we) & (dram_port.wdata.valid) & (read_always_flag_sig == 0) & (scrubbing_flag_sig == 0),
                 #     data_sig.eq(0),
-                # ).Elif((burst_cntr_sig >= 0xfffff0) & (dram_port.cmd.we) & (dram_port.wdata.valid),
+                # ).Elif((burst_cntr_sig >= 0xfffffd) & (dram_port.cmd.we) & (dram_port.wdata.valid) & (read_always_flag_sig == 0) & (scrubbing_flag_sig == 0),
                 #     data_sig.eq(0),    
                 # ).Else(
                 #     data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),

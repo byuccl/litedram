@@ -287,7 +287,10 @@ class DRAMBistFSM(Module, AutoCSR):
         # A debug signal to find out which states we are in
         self.state_num_sig = CSRStatus(WIDTH_32_BITS)
 
+        # Counter signal to control how many errors displayed
         error_display_counter_sig = Signal(WIDTH_32_BITS)
+        error_max_display_counter_sig = Signal(WIDTH_32_BITS)
+        self.error_display_counter_sig = error_display_counter_sig
 
 
 
@@ -378,6 +381,11 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextValue(scrubbing_flag_sig, 0),
                 NextValue(chooser_cntr_sig, 0),
                 NextValue(error_display_counter_sig, 0),
+                If(self.error_max_count.storage == 0,
+                    NextValue(error_max_display_counter_sig, max_address_sig),
+                ).Else(
+                    NextValue(error_max_display_counter_sig, self.error_max_count.storage),
+                ),
                 NextValue(address_sig, self.base_address.storage),
                 NextValue(beg_address_sig, self.base_address.storage),
                 NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
@@ -641,14 +649,20 @@ class DRAMBistFSM(Module, AutoCSR):
         dram_port_fsm.act(
             "READER_ONLY_ERR_DISPLAY",
             self.state_num_sig.status.eq(0x25),
-            If((self.error_data == data_sig) | error_ack_sig,
-                If(address_sig == self.error_ending_address.status | 
-                  ((self.error_max_count.storage != 0) & (error_display_counter_sig >= self.error_max_count.storage)),
+            If(((self.error_data == data_sig) | error_ack_sig),
+                If((address_sig == self.error_ending_address.status) | 
+                   (error_display_counter_sig >= error_max_display_counter_sig),
                     NextState("READER_ONLY_FINISH"),
                     NextValue(error_display_counter_sig, 0),
                 ).Else(
+                    # Note: My train of thought here is that the error_found_flag will not go high 
+                    # unless there is an error, and error_ack_sig will not go high until software
+                    # sees the error_found_flag go high and sets error_ack_sig high. Therefore, 
+                    # error_ack_sig will not go high unless an error is found.
+                    If(error_ack_sig,
+                        NextValue(error_display_counter_sig, error_display_counter_sig + 1),
+                    ),
                     NextValue(address_sig, address_sig + 1),
-                    NextValue(error_display_counter_sig, error_display_counter_sig + 1),
                     NextState("READER_ONLY_ERR_REQ"),
                 )
             ).Else(
@@ -929,12 +943,18 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextState("IDLE"),
             ).Elif((self.error_data == data_sig) | error_ack_sig,
                 If(address_sig == self.error_ending_address.status | 
-                  ((self.error_max_count.storage != 0) & (error_display_counter_sig >= self.error_max_count.storage)),
+                  (error_display_counter_sig >= error_max_display_counter_sig),
                     NextState("DISPLAY_DATA_PAUSE"),
                     NextValue(error_display_counter_sig, 0),
                 ).Else(
+                    # Note: My train of thought here is that the error_found_flag will not go high 
+                    # unless there is an error, and error_ack_sig will not go high until software
+                    # sees the error_found_flag go high and sets error_ack_sig high. Therefore, 
+                    # error_ack_sig will not go high unless an error is found.
+                    If(error_ack_sig,
+                        NextValue(error_display_counter_sig, error_display_counter_sig + 1),
+                    ),
                     NextValue(address_sig, address_sig + 1),
-                    NextValue(error_display_counter_sig, error_display_counter_sig + 1),
                     NextState("READ_ERR_REQ"),
                 )
             ).Else(

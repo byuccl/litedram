@@ -225,6 +225,8 @@ class DRAMBistFSM(Module, AutoCSR):
         # Registers to hold address with start of errors and end of errors
         self.error_beginning_address = CSRStatus(dram_port.address_width, description="Beginning address where errors start")
         self.error_ending_address = CSRStatus(dram_port.address_width, description="The last address holding a DRAM error")
+        
+        self.error_max_count = CSRStorage(WIDTH_32_BITS, description="Max number of errors to display")
 
 
 
@@ -284,6 +286,8 @@ class DRAMBistFSM(Module, AutoCSR):
 
         # A debug signal to find out which states we are in
         self.state_num_sig = CSRStatus(WIDTH_32_BITS)
+
+        error_display_counter_sig = Signal(WIDTH_32_BITS)
 
 
 
@@ -373,6 +377,7 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextValue(error_beg_addr_chosen, 0),
                 NextValue(scrubbing_flag_sig, 0),
                 NextValue(chooser_cntr_sig, 0),
+                NextValue(error_display_counter_sig, 0),
                 NextValue(address_sig, self.base_address.storage),
                 NextValue(beg_address_sig, self.base_address.storage),
                 NextValue(end_address_sig, self.base_address.storage + self.length_address.storage),
@@ -637,10 +642,13 @@ class DRAMBistFSM(Module, AutoCSR):
             "READER_ONLY_ERR_DISPLAY",
             self.state_num_sig.status.eq(0x25),
             If((self.error_data == data_sig) | error_ack_sig,
-                If(address_sig == self.error_ending_address.status,
+                If(address_sig == self.error_ending_address.status | 
+                  ((self.error_max_count.storage != 0) & (error_display_counter_sig >= self.error_max_count.storage)),
                     NextState("READER_ONLY_FINISH"),
+                    NextValue(error_display_counter_sig, 0),
                 ).Else(
                     NextValue(address_sig, address_sig + 1),
+                    NextValue(error_display_counter_sig, error_display_counter_sig + 1),
                     NextState("READER_ONLY_ERR_REQ"),
                 )
             ).Else(
@@ -920,10 +928,13 @@ class DRAMBistFSM(Module, AutoCSR):
             If(self.start.storage == 0,
                 NextState("IDLE"),
             ).Elif((self.error_data == data_sig) | error_ack_sig,
-                If(address_sig == self.error_ending_address.status,
+                If(address_sig == self.error_ending_address.status | 
+                  ((self.error_max_count.storage != 0) & (error_display_counter_sig >= self.error_max_count.storage)),
                     NextState("DISPLAY_DATA_PAUSE"),
+                    NextValue(error_display_counter_sig, 0),
                 ).Else(
                     NextValue(address_sig, address_sig + 1),
+                    NextValue(error_display_counter_sig, error_display_counter_sig + 1),
                     NextState("READ_ERR_REQ"),
                 )
             ).Else(

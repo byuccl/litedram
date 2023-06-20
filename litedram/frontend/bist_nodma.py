@@ -1139,24 +1139,24 @@ class DRAMBistFSM(Module, AutoCSR):
                 # byte-enabled writes are supported
                 dram_port.wdata.we.eq(~0),
 
-                # # For debugging
-                # #######################################################
-                If((burst_cntr_sig <= 0x2) & (dram_port.cmd.we) & (dram_port.wdata.valid) & (scrubbing_flag_sig == 0),
-                    data_sig.eq(0),
-                ).Elif((burst_cntr_sig >= 0x1fffffd) & (dram_port.cmd.we) & (dram_port.wdata.valid) & (scrubbing_flag_sig == 0),
-                    data_sig.eq(0),
+                # # # For debugging
+                # # #######################################################
+                # If((burst_cntr_sig <= 0x2) & (dram_port.cmd.we) & (dram_port.wdata.valid) & (scrubbing_flag_sig == 0),
+                #     data_sig.eq(0),
+                # ).Elif((burst_cntr_sig >= 0x1fffffd) & (dram_port.cmd.we) & (dram_port.wdata.valid) & (scrubbing_flag_sig == 0),
+                #     data_sig.eq(0),
 		
-                # # If(((self.state_num_sig == 0x04) | (self.state_num_sig == 0x05) | (self.state_num_sig == 0x06)) & (chooser_cntr_sig == 0x03) & (burst_cntr_sig == 0x04),
-                # #     data_sig.eq(0),
-                # # ).Elif(((self.state_num_sig == 0x07) | (self.state_num_sig == 0x08) | (self.state_num_sig == 0x09)) & (chooser_cntr_sig == 0x03) & (address_sig == 0x04),
-                # #     data_sig.eq(0),
-                ).Else(
-                    data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
-                ),
-                # ########################################################
+                # # # If(((self.state_num_sig == 0x04) | (self.state_num_sig == 0x05) | (self.state_num_sig == 0x06)) & (chooser_cntr_sig == 0x03) & (burst_cntr_sig == 0x04),
+                # # #     data_sig.eq(0),
+                # # # ).Elif(((self.state_num_sig == 0x07) | (self.state_num_sig == 0x08) | (self.state_num_sig == 0x09)) & (chooser_cntr_sig == 0x03) & (address_sig == 0x04),
+                # # #     data_sig.eq(0),
+                # ).Else(
+                #     data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
+                # ),
+                # # ########################################################
 
                 # Set the data to write with a replicated CSR register
-                # data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
+                data_sig.eq(Replicate(self.input_data_pattern.storage, dram_port.data_width//len(self.input_data_pattern.storage))),
                 dram_port.wdata.data.eq(data_sig),
 
                 # NextValue(chooser_cntr_sig, 0),

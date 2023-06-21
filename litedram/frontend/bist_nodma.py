@@ -1017,6 +1017,7 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextValue(burst_cntr_sig, 0),
                 NextValue(delay_tick_ctr_sig, 0),
                 NextValue(error_beg_addr_chosen, 0),
+                NextValue(self.error_counter.status, 0),
                 NextValue(chooser_cntr_sig, chooser_cntr_sig + 1),
                 If(~self.start.storage,
                     NextState("IDLE"),

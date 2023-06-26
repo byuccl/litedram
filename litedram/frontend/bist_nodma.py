@@ -109,7 +109,7 @@ class DRAMBistFSM(Module, AutoCSR):
         self.address_mode = CSRStorage(TWO_BITS_WIDE, description="Address mode: 0 for fixed addr mode, 1 for increment addr mode")
 
         # A register to contain the write mode for the bist, 0 for write once read always, 1 for write/read always. Read above for description.
-        self.wr_mode = CSRStorage(TWO_BITS_WIDE, description="Write mode: 0 for write once read always, 1 for write/read always.")
+        self.wr_mode = CSRStorage(TWO_BITS_WIDE, description="Write mode: 0 for read always, 1 for write once read always, 2 for write/read always.")
 
         # A register to set the mode to writer only
         self.write_only_mode = CSRStorage(ONE_BIT_WIDE, description="Write only mode: Control the part of the state machine that writes only.")
@@ -228,6 +228,9 @@ class DRAMBistFSM(Module, AutoCSR):
         self.error_ending_address = CSRStatus(dram_port.address_width, description="The last address holding a DRAM error")
         
         self.error_max_count = CSRStorage(WIDTH_32_BITS, description="Max number of errors to display")
+
+        # A register to disable the error_flag_sig for read-only mode
+        self.error_flag_enable = CSRStorage(ONE_BIT_WIDE, reset=ONE_BIT_WIDE, description="Disable the error flag in order to simply read continuously without scrubbing.")
 
 
 
@@ -1024,7 +1027,13 @@ class DRAMBistFSM(Module, AutoCSR):
                 ).Elif(self.address_mode.storage == FIXED_ADDR_MODE,
                     NextValue(address_sig, beg_address_sig),
                     If((self.wr_mode.storage == W_ONCE_R_ALWAYS) | (self.wr_mode.storage == READ_ALWAYS),
-                        NextState("READ_REQUEST")
+                        If(error_flag_sig & self.error_flag_enable.storage,
+                            NextValue(error_flag_sig, 0),
+                            NextValue(scrubbing_flag_sig, 1),
+                            NextState("WRITE_REQUEST"),
+                        ).Else(
+                            NextState("READ_REQUEST"),
+                        ),
                     ).Elif(self.wr_mode.storage == WR_ALWAYS,
                         NextState("WRITE_REQUEST")
                     )
@@ -1032,7 +1041,7 @@ class DRAMBistFSM(Module, AutoCSR):
                     If((self.wr_mode.storage == W_ONCE_R_ALWAYS) | (self.wr_mode.storage == READ_ALWAYS),
                         # If overflow occurs when assigning the new values, 
                         # revert the new addresses back to the original ones.
-                        If(error_flag_sig,
+                        If(error_flag_sig & self.error_flag_enable.storage,
                             NextValue(beg_address_sig, beg_address_sig),
                             NextValue(address_sig, beg_address_sig),
                             NextValue(end_address_sig, end_address_sig),

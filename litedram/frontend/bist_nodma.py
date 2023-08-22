@@ -6,6 +6,7 @@ communicate with the dram controller.
 
 
 
+
 from migen import *
 
 from litex.soc.interconnect.csr import *

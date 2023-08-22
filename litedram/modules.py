@@ -325,6 +325,7 @@ class SDRAMModule:
         assert fine_refresh_mode in [None, "1x", "2x", "4x"]
         if (fine_refresh_mode is None) and (self.memtype == "DDR4"):
             fine_refresh_mode = "1x"
+        print("\n\n\ntrefi: ", self.get("tREFI"))
         self.timing_settings = TimingSettings(
             tRP   = self.ck_ns_to_cycles(self.get("tRP")),
             tRCD  = self.ck_ns_to_cycles(self.get("tRCD")),
@@ -339,6 +340,8 @@ class SDRAMModule:
             tRAS  = None if self.get("tRAS") is None else self.ck_ns_to_cycles(self.get("tRAS")),
             tZQCS = None if self.get("tZQCS") is None else self.ck_ns_to_cycles(self.get("tZQCS"))
         )
+        
+        print("\n\n\ntrefi act: ", self.timing_settings.tREFI, "\n\n\n")
         self.timing_settings.fine_refresh_mode = fine_refresh_mode
 
     def get(self, name, key=None):
@@ -629,7 +632,7 @@ class MT47H64M16(DDR2Module):
     nrows  = 8192
     ncols  = 1024
     # timings
-    technology_timings = _TechnologyTimings(tREFI=64e6/8192, tWTR=(None, 7.5), tCCD=(2, None), tRRD=None)
+    technology_timings = _TechnologyTimings(tREFI=8192e8/8192, tWTR=(None, 7.5), tCCD=(2, None), tRRD=None)
     speedgrade_timings = {"default": _SpeedgradeTimings(tRP=15, tRCD=15, tWR=15, tRFC=(None, 127.5), tFAW=None, tRAS=None)}
 
 class P3R1GE4JGF(DDR2Module):

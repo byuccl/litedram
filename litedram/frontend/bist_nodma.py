@@ -798,16 +798,22 @@ class DRAMBistFSM(Module, AutoCSR):
         # to the reader_only recieve and request state.
         dram_port_fsm.act(
             "READ_REQUEST",
-            self.state_num_sig.status.eq(0x4),
-            dram_port.cmd.valid.eq(1),
-            NextValue(self.read_ticks.status, self.read_ticks.status + 1),
-            If(dram_port.cmd.ready,
-               If(address_sig == end_address_sig,
-                    NextValue(address_sig, address_sig),
-                    NextState("READ_RECIEVE"),
-                ).Else(
-                    NextValue(address_sig, address_sig + 1),
-                    NextState("READ_REQ_REC"),
+            NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
+            If(delay_tick_ctr_sig >= delay_max_ticks_sig,
+                NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig),
+                self.state_num_sig.status.eq(0x4),
+                dram_port.cmd.valid.eq(1),
+                NextValue(self.read_ticks.status, self.read_ticks.status + 1),
+                If(dram_port.cmd.ready,
+                If(address_sig == end_address_sig,
+                        NextValue(address_sig, address_sig),
+                        NextValue(delay_tick_ctr_sig, 0),
+                        NextState("READ_RECIEVE"),
+                    ).Else(
+                        NextValue(address_sig, address_sig + 1),
+                        NextValue(delay_tick_ctr_sig, 0),
+                        NextState("READ_REQ_REC"),
+                    )
                 )
             )
         )
@@ -1011,8 +1017,9 @@ class DRAMBistFSM(Module, AutoCSR):
         dram_port_fsm.act(
             "END_STATE_WAIT_CHOOSER",
             self.state_num_sig.status.eq(0xb),
-            NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
-            If(delay_tick_ctr_sig >= delay_max_ticks_sig,
+            # NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
+            # If(delay_tick_ctr_sig >= delay_max_ticks_sig,
+            If(self.start.storage,
                 NextValue(self.write_ticks.status, 0),
                 NextValue(self.read_ticks.status, 0),
                 NextValue(self.total_writes.status, 0),

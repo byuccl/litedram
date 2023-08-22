@@ -10,6 +10,8 @@
 from migen import *
 from migen.genlib.misc import timeline
 
+from litex.soc.interconnect.csr import CSRStorage, AutoCSR, CSRStatus
+
 from litex.soc.interconnect import stream
 
 from litedram.core.multiplexer import *
@@ -108,17 +110,52 @@ class RefreshTimer(Module):
         self.wait  = Signal()
         self.done  = Signal()
         self.count = Signal(bits_for(trefi))
+        # self.count = Signal(32)
 
         # # #
 
         done  = Signal()
         count = Signal(bits_for(trefi), reset=trefi-1)
+        # count = Signal(32, reset=trefi-1)
 
         self.sync += [
             If(self.wait & ~self.done,
                 count.eq(count - 1)
             ).Else(
-                count.eq(count.reset)
+                count.eq(count.reset),
+            )
+        ]
+        self.comb += [
+            done.eq(count == 0),
+            self.done.eq(done),
+            self.count.eq(count)
+        ]
+
+class RefreshTimerCSR(Module):
+    """Refresh Timer
+
+    Generate periodic pulses (tREFI period) to trigger DRAM refresh.
+    """
+    def __init__(self, trefi:CSRStorage, refresh_ctr:CSRStatus):
+        self.wait  = Signal()
+        self.done  = Signal()
+        # self.count = Signal(bits_for(trefi))
+        self.count = Signal(32)
+
+        # # #
+
+        done  = Signal()
+        # count = Signal(bits_for(trefi), reset=trefi-1)
+        count = Signal(32)
+
+        self.sync += [
+            If(self.wait & ~self.done,
+                count.eq(count - 1)
+            ).Else(
+                If(trefi.storage != 0,
+                    count.eq(trefi.storage - 1),
+                    refresh_ctr.status.eq(refresh_ctr.status + 1)
+                )
             )
         ]
         self.comb += [
@@ -204,7 +241,7 @@ class ZQCSExecuter(Module):
 
 # Refresher ----------------------------------------------------------------------------------------
 
-class Refresher(Module):
+class Refresher(Module, AutoCSR):
     """Refresher
 
     Manage DRAM refresh.
@@ -218,7 +255,7 @@ class Refresher(Module):
     transactions are done, the Refresher can execute the refresh Sequence and release the Controller.
 
     """
-    def __init__(self, settings, clk_freq, zqcs_freq=1e0, postponing=1):
+    def __init__(self, settings, clk_freq, trefi_csr, refresh_ctr, zqcs_freq=1e0, postponing=1):
         assert postponing <= 8
         abits  = settings.geom.addressbits
         babits = settings.geom.bankbits + log2_int(settings.phy.nranks)
@@ -232,7 +269,7 @@ class Refresher(Module):
         # Refresh Timer ----------------------------------------------------------------------------
         if settings.timing.tREFI < 100: # FIXME: Reduce Margin.
             raise ValueError("Clk/tREFI is ratio too low , please increase Clk frequency or disable Refresh.")
-        timer = RefreshTimer(settings.timing.tREFI)
+        timer = RefreshTimerCSR(trefi_csr, refresh_ctr)
         self.submodules.timer = timer
         self.comb += timer.wait.eq(~timer.done)
 

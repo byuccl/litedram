@@ -800,7 +800,9 @@ class DRAMBistFSM(Module, AutoCSR):
         dram_port_fsm.act(
             "READ_REQUEST",
             NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig + 1),
-            If(delay_tick_ctr_sig >= delay_max_ticks_sig,
+            If(~self.start.storage,
+                NextState("IDLE"),
+            ).Elif(delay_tick_ctr_sig >= delay_max_ticks_sig,
                 NextValue(delay_tick_ctr_sig, delay_tick_ctr_sig),
                 self.state_num_sig.status.eq(0x4),
                 dram_port.cmd.valid.eq(1),

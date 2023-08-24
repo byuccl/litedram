@@ -255,7 +255,7 @@ class Refresher(Module, AutoCSR):
     transactions are done, the Refresher can execute the refresh Sequence and release the Controller.
 
     """
-    def __init__(self, settings, clk_freq, trefi_csr, refresh_ctr, zqcs_freq=1e0, postponing=1):
+    def __init__(self, settings, clk_freq, trefi_csr, refresh_ctr, refresh_enable, zqcs_freq=1e0, postponing=1):
         assert postponing <= 8
         abits  = settings.geom.addressbits
         babits = settings.geom.bankbits + log2_int(settings.phy.nranks)
@@ -297,7 +297,7 @@ class Refresher(Module, AutoCSR):
         # Refresh FSM ------------------------------------------------------------------------------
         self.submodules.fsm = fsm = FSM()
         fsm.act("IDLE",
-            If(settings.with_refresh,
+            If(refresh_enable.storage,
                 If(wants_refresh,
                     NextState("WAIT-BANK-MACHINES")
                 )

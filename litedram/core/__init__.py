@@ -26,6 +26,7 @@ class LiteDRAMCore(Module, AutoCSR):
 
         self.trefi_csr = CSRStorage(32)
         self.refresh_ctr = CSRStatus(32)
+        self.refresh_enable = CSRStorage(1, reset=1)
         self.submodules.controller = controller = LiteDRAMController(
             phy_settings    = phy.settings,
             geom_settings   = geom_settings,
@@ -33,6 +34,7 @@ class LiteDRAMCore(Module, AutoCSR):
             clk_freq        = clk_freq,
             trefi_csr = self.trefi_csr,
             refresh_ctr = self.refresh_ctr,
+            refresh_enable = self.refresh_enable,
             **kwargs)
         self.comb += controller.dfi.connect(self.dfii.slave)
 

@@ -140,24 +140,49 @@ class RefreshTimerCSR(Module):
         self.wait  = Signal()
         self.done  = Signal()
         # self.count = Signal(bits_for(trefi))
-        self.count = Signal(32)
+        ###############################################################
+        # Below 42 seconds
+        ###############################################################
+        # self.count = Signal(32)
+
+        # # # #
+
+        # done  = Signal()
+        # # count = Signal(bits_for(trefi), reset=trefi-1)
+        # count = Signal(32)
+
+        # self.sync += [
+        #     If(self.wait & ~self.done,
+        #         count.eq(count - 1)
+        #     ).Else(
+        #         If(trefi.storage != 0,
+        #             count.eq(trefi.storage - 1),
+        #             refresh_ctr.status.eq(refresh_ctr.status + 1)
+        #         )
+        #     )
+        # ]
+        ###############################################################
+        # Above 1 second
+        ###############################################################
+        self.count = Signal(64)
 
         # # #
 
         done  = Signal()
         # count = Signal(bits_for(trefi), reset=trefi-1)
-        count = Signal(32)
+        count = Signal(64)
 
         self.sync += [
             If(self.wait & ~self.done,
                 count.eq(count - 1)
             ).Else(
                 If(trefi.storage != 0,
-                    count.eq(trefi.storage - 1),
+                    count.eq((trefi.storage * 1228931072) - 1),
                     refresh_ctr.status.eq(refresh_ctr.status + 1)
                 )
             )
         ]
+        ###############################################################
         self.comb += [
             done.eq(count == 0),
             self.done.eq(done),

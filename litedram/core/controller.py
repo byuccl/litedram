@@ -46,7 +46,7 @@ class ControllerSettings(Settings):
 # Controller ---------------------------------------------------------------------------------------
 
 class LiteDRAMController(Module):
-    def __init__(self, phy_settings, geom_settings, timing_settings, clk_freq, trefi_csr, refresh_ctr,
+    def __init__(self, phy_settings, geom_settings, timing_settings, clk_freq,
         controller_settings=ControllerSettings()):
         if phy_settings.memtype == "SDR":
             burst_length = phy_settings.nphases
@@ -79,8 +79,6 @@ class LiteDRAMController(Module):
         # Refresher --------------------------------------------------------------------------------
         self.submodules.refresher = self.settings.refresh_cls(self.settings,
             clk_freq   = clk_freq,
-            trefi_csr  = trefi_csr,
-            refresh_ctr= refresh_ctr,
             zqcs_freq  = self.settings.refresh_zqcs_freq,
             postponing = self.settings.refresh_postponing)
 

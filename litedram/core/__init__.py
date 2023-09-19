@@ -6,7 +6,7 @@
 
 from migen import *
 
-from litex.soc.interconnect.csr import AutoCSR, CSRStorage, CSRStatus
+from litex.soc.interconnect.csr import AutoCSR
 
 from litedram.dfii import DFIInjector
 from litedram.core.controller import ControllerSettings, LiteDRAMController
@@ -24,18 +24,12 @@ class LiteDRAMCore(Module, AutoCSR):
             nphases     = phy.settings.nphases)
         self.comb += self.dfii.master.connect(phy.dfi)
 
-        self.trefi_csr = CSRStorage(32)
-        self.refresh_ctr = CSRStatus(32)
         self.submodules.controller = controller = LiteDRAMController(
             phy_settings    = phy.settings,
             geom_settings   = geom_settings,
             timing_settings = timing_settings,
             clk_freq        = clk_freq,
-            trefi_csr = self.trefi_csr,
-            refresh_ctr = self.refresh_ctr,
             **kwargs)
         self.comb += controller.dfi.connect(self.dfii.slave)
 
         self.submodules.crossbar = LiteDRAMCrossbar(controller.interface)
-
-        print("\n\n\ntrefi: {}\n\n\n".format(timing_settings.tREFI))

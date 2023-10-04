@@ -661,13 +661,15 @@ class DRAMBistFSM(Module, AutoCSR):
             self.state_num_sig.status.eq(0x25),
             If(((self.error_data == data_sig) | error_ack_sig | (error_display_counter_sig >= error_max_display_counter_sig)),
                 If((address_sig == self.error_ending_address.status) | 
-                   (error_display_counter_sig >= error_max_display_counter_sig),
+                   (error_display_counter_sig >= error_max_display_counter_sig) |
+                   (address_sig == max_address_sig),
                     NextState("READER_ONLY_FINISH"),
                     NextValue(error_display_counter_sig, 0),
                 ).Else(
                     # Note: My train of thought here is that the error_found_flag will not go high 
                     # unless there is an error, and error_ack_sig will not go high until software
-                    # sees the error_found_flag go high and sets error_ack_sig high. Therefore, 
+                    # sees the error_found_flag go high and sets error_ack_sig high (as this gives 
+                    # time for software to print out the error). Therefore, 
                     # error_ack_sig will not go high unless an error is found.
                     If(error_ack_sig,
                         NextValue(error_display_counter_sig, error_display_counter_sig + 1),
@@ -962,7 +964,8 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextState("IDLE"),
             ).Elif((self.error_data == data_sig) | error_ack_sig | (error_display_counter_sig >= error_max_display_counter_sig),
                 If((address_sig == self.error_ending_address.status) | 
-                  (error_display_counter_sig >= error_max_display_counter_sig),
+                   (error_display_counter_sig >= error_max_display_counter_sig) |
+                   (address_sig == max_address_sig),
                     NextState("DISPLAY_DATA_PAUSE"),
                     NextValue(error_display_counter_sig, 0),
                 ).Else(

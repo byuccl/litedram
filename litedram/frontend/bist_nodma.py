@@ -661,8 +661,7 @@ class DRAMBistFSM(Module, AutoCSR):
             self.state_num_sig.status.eq(0x25),
             If(((self.error_data == data_sig) | error_ack_sig | (error_display_counter_sig >= error_max_display_counter_sig)),
                 If((address_sig == self.error_ending_address.status) | 
-                   (error_display_counter_sig >= error_max_display_counter_sig) |
-                   (address_sig == max_address_sig),
+                   (error_display_counter_sig >= error_max_display_counter_sig),
                     NextState("READER_ONLY_FINISH"),
                     NextValue(error_display_counter_sig, 0),
                 ).Else(
@@ -964,8 +963,7 @@ class DRAMBistFSM(Module, AutoCSR):
                 NextState("IDLE"),
             ).Elif((self.error_data == data_sig) | error_ack_sig | (error_display_counter_sig >= error_max_display_counter_sig),
                 If((address_sig == self.error_ending_address.status) | 
-                   (error_display_counter_sig >= error_max_display_counter_sig) |
-                   (address_sig == max_address_sig),
+                   (error_display_counter_sig >= error_max_display_counter_sig),
                     NextState("DISPLAY_DATA_PAUSE"),
                     NextValue(error_display_counter_sig, 0),
                 ).Else(
